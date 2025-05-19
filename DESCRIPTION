@@ -39,8 +39,8 @@ Suggests:
     testthat (>= 2.1.0),
     roxygen2
 Remotes:
-	James-Thorson-NOAA/VAST,
-    James-Thorson-NOAA/FishStatsUtils,
+	James-Thorson-NOAA/VAST@3.7.1,
+    James-Thorson-NOAA/FishStatsUtils@2.9.1,
     kaskr/TMB_contrib_R/TMBhelper
-URL: https://github.com/PacificCommunity/ofp-sam-vast-utils
-BugReports: https://github.com/PacificCommunity/ofp-sam-vast-utils/issues
+URL: https://github.com/kyuhank/ofp-sam-vast-utils
+BugReports: https://github.com/kyuhank/ofp-sam-vast-utils/issues
