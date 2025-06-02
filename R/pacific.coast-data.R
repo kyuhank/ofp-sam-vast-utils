@@ -1,4 +1,4 @@
-#' A shapefile of coastline centered on the pacific ocean
+#' A shapefile of coastline centered on the Pacific Ocean
 #'
 #' @format An object of class SpatialPolygons
 #' \describe{
@@ -8,5 +8,5 @@
 #'   \item{y max}{70}
 #'   \item{proj4string}{+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0}
 #' }
-#' @source <https://www.ngdc.noaa.gov/mgg/shorelines/>
+#' @source \url{https://www.ngdc.noaa.gov/mgg/shorelines/}
 "pacific.coast"

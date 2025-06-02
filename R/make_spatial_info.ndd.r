@@ -12,7 +12,7 @@
 #' @param Lat_i Latitude for each sample
 #' @param knot_method whether to determine location of GMRF vertices based on the location of samples \code{knot_method=`samples`} or extrapolation-grid cells within the specified strata \code{knot_method='grid'}
 #' @param Method a character of either "Grid" or "Mesh" where "Grid" is a 2D AR1 process, and "Mesh" is the SPDE method with geometric anisotropy
-#' @param fine_scale a Boolean indicating whether to ignore (\code{fine_scale=FALSE}) or account for (\code{fine_scale=TRUE}) fine-scale spatial heterogeneity;  See details for more informatino
+#' @param fine_scale a Boolean indicating whether to ignore (\code{fine_scale=FALSE}) or account for (\code{fine_scale=TRUE}) fine-scale spatial heterogeneity;  See details for more information
 #' @param Extrapolation_List the output from \code{Prepare_Extrapolation_Data_Fn}
 #' @param grid_size_km the distance between grid cells for the 2D AR1 grid (determines spatial resolution when Method="Grid") when not using \code{Method="Spherical_mesh"}
 #' @param grid_size_LL the distance between grid cells for the 2D AR1 grid (determines spatial resolution when Method="Grid") when using \code{Method="Spherical_mesh"}
@@ -32,29 +32,26 @@
 #' @importFrom FishStatsUtils Calc_Kmeans
 #' @importFrom FishStatsUtils Calc_Anisotropic_Mesh
 #' @importFrom FishStatsUtils Calc_Polygon_Areas_and_Polygons_Fn
-
 #' @return Tagged list containing objects for running a VAST model
 #' \describe{
 #'   \item{MeshList}{A tagged list with inputs related to the SPDE mesh}
 #'   \item{GridList}{A tagged list with inputs related to the 2D AR1 grid}
-#'   \item{a_xl}{A data frame with areas for each knot and each strattum}
+#'   \item{a_xl}{A data frame with areas for each knot and each stratum}
 #'   \item{loc_UTM}{A data frame with the converted UTM coordinates for each sample}
 #'   \item{Kmeans}{Output from \code{FishStatsUtils::Calc_Kmeans} with knots for a triangulated mesh}
 #'   \item{knot_i}{The knot associated with each sample}
 #'   \item{Method}{The Method input (for archival purposes)}
 #'   \item{loc_x}{The UTM location for each knot}
 #' }
-#'
-
 #' @export
 
-make_spatial_info.ndd = function( n_x, Lon_i, Lat_i, Extrapolation_List, knot_method="samples", Method="Mesh",
-  grid_size_km=50, grid_size_LL=1, fine_scale=FALSE, Network_sz_LL=NULL,
-  iter.max=1000, randomseed=1, nstart=100, DirPath=paste0(getwd(),"/"), Save_Results=FALSE,
+make_spatial_info.ndd = function( n_x, Lon_i, Lat_i, Extrapolation_List, knot_method = "samples", Method = "Mesh",
+  grid_size_km = 50, grid_size_LL = 1, fine_scale = FALSE, Network_sz_LL = NULL,
+  iter.max = 1000, randomseed = 1, nstart = 100, DirPath = paste0(getwd(),"/"), Save_Results = FALSE,
   LON_intensity, LAT_intensity, crs.en, crs.ll, ... ){
 
   # Deprecated options
-  if( Method=="Spherical_mesh" ){
+  if( Method == "Spherical_mesh" ){
     stop("Method=`Spherical_mesh` is not being maintained, but please write the package author if you need to explore this option")
   }
   if( Method == "Stream_network" & fine_scale == TRUE ){
@@ -63,12 +60,12 @@ make_spatial_info.ndd = function( n_x, Lon_i, Lat_i, Extrapolation_List, knot_me
 
   # Backwards compatible option for different extrapolation grid
   if( missing(LON_intensity) & missing(LAT_intensity) ){
-    if( knot_method=="samples" ){
+    if( knot_method == "samples" ){
       LON_intensity = Lon_i
       LAT_intensity = Lat_i
     }
-    if( knot_method=="grid" ){
-      which_rows = which( Extrapolation_List$Data_Extrap[,'Include']==TRUE & Extrapolation_List[["Area_km2_x"]]>0 & rowSums(Extrapolation_List[["a_el"]])>0 )
+    if( knot_method == "grid" ){
+      which_rows = which( Extrapolation_List$Data_Extrap[,'Include'] == TRUE & Extrapolation_List[["Area_km2_x"]] > 0 & rowSums(Extrapolation_List[["a_el"]]) > 0 )
       LON_intensity = Extrapolation_List$Data_Extrap[ which_rows, 'Lon']
       LAT_intensity = Extrapolation_List$Data_Extrap[ which_rows, 'Lat']
     }
@@ -76,46 +73,46 @@ make_spatial_info.ndd = function( n_x, Lon_i, Lat_i, Extrapolation_List, knot_me
   }
 
   # Convert to an Eastings-Northings coordinate system
-  if( Method=="Spherical_mesh" ){
-    loc_i = data.frame( 'Lon'=Lon_i, 'Lat'=Lat_i )
+  if( Method == "Spherical_mesh" ){
+    loc_i = data.frame( 'Lon' = Lon_i, 'Lat' = Lat_i )
     # Bounds for 2D AR1 grid
-    Grid_bounds = (grid_size_km/110) * apply(loc_e/(grid_size_km/110), MARGIN=2, FUN=function(vec){trunc(range(vec))+c(0,1)})
+    Grid_bounds = (grid_size_km/110) * apply(loc_i/(grid_size_km/110), MARGIN = 2, FUN = function(vec){trunc(range(vec)) + c(0,1)})
 
     # Calculate k-means centroids
-    Kmeans = FishStatsUtils::Calc_Kmeans(n_x=n_x, loc_orig=loc_i[,c("Lon", "Lat")], randomseed=randomseed, ... )
+    Kmeans = FishStatsUtils::Calc_Kmeans(n_x = n_x, loc_orig = loc_i[,c("Lon", "Lat")], randomseed = randomseed, ... )
 
     # Calculate grid for 2D AR1 process
-    loc_grid = expand.grid( 'Lon'=seq(Grid_bounds[1,1],Grid_bounds[2,1],by=grid_size_LL), 'Lat'=seq(Grid_bounds[1,2],Grid_bounds[2,2],by=grid_size_LL) )
-    Which = sort(unique(RANN::nn2(data=loc_grid, query=Extrapolation_List$Data_Extrap[which(Extrapolation_List$Area_km2_x>0),c('Lon','Lat')], k=1)$nn.idx[,1]))
+    loc_grid = expand.grid( 'Lon' = seq(Grid_bounds[1,1], Grid_bounds[2,1], by = grid_size_LL), 'Lat' = seq(Grid_bounds[1,2], Grid_bounds[2,2], by = grid_size_LL) )
+    Which = sort(unique(RANN::nn2(data = loc_grid, query = Extrapolation_List$Data_Extrap[which(Extrapolation_List$Area_km2_x > 0),c('Lon','Lat')], k = 1)$nn.idx[,1]))
     loc_grid = loc_grid[Which,]
-    grid_num = RANN::nn2( data=loc_grid, query=loc_i, k=1)$nn.idx[,1]
+    grid_num = RANN::nn2( data = loc_grid, query = loc_i, k = 1)$nn.idx[,1]
   }
   if( Method %in% c("Mesh","Grid","Stream_network") ){
     if( is.numeric(Extrapolation_List$zone) ){
       # Locations for samples
-      loc_i = Convert_LL_to_EastNorth_Fn.ndd( Lon=Lon_i, Lat=Lat_i, crs.en, crs.ll)                                                         #$
+      loc_i = Convert_LL_to_EastNorth_Fn.ndd( Lon = Lon_i, Lat = Lat_i, crs.en, crs.ll)
       # Locations for locations for knots
-      loc_intensity = Convert_LL_to_EastNorth_Fn.ndd( Lon=LON_intensity, Lat=LAT_intensity, crs.en, crs.ll)                                                         #$
-    }else{
-      loc_i = Convert_LL_to_EastNorth_Fn.ndd( Lon=Lon_i, Lat=Lat_i, crs.en, crs.ll)
-      loc_intensity = Convert_LL_to_EastNorth_Fn.ndd( Lon=LON_intensity, Lat=LAT_intensity, crs.en, crs.ll )
+      loc_intensity = Convert_LL_to_EastNorth_Fn.ndd( Lon = LON_intensity, Lat = LAT_intensity, crs.en, crs.ll)
+    } else {
+      loc_i = Convert_LL_to_EastNorth_Fn.ndd( Lon = Lon_i, Lat = Lat_i, crs.en, crs.ll)
+      loc_intensity = Convert_LL_to_EastNorth_Fn.ndd( Lon = LON_intensity, Lat = LAT_intensity, crs.en, crs.ll )
     }
     # Bounds for 2D AR1 grid
-    Grid_bounds = grid_size_km * apply(Extrapolation_List$Data_Extrap[,c('E_km','N_km')]/grid_size_km, MARGIN=2, FUN=function(vec){trunc(range(vec))+c(0,1)})
+    Grid_bounds = grid_size_km * apply(Extrapolation_List$Data_Extrap[,c('E_km','N_km')]/grid_size_km, MARGIN = 2, FUN = function(vec){trunc(range(vec)) + c(0,1)})
 
     # Calculate k-means centroids
-    Kmeans = FishStatsUtils::Calc_Kmeans(n_x=n_x, loc_orig=loc_intensity[,c("E_km", "N_km")], randomseed=randomseed, nstart=nstart, DirPath=DirPath, Save_Results=Save_Results )
-    NN_i = RANN::nn2( data=Kmeans[["centers"]], query=loc_i, k=1)$nn.idx[,1]
+    Kmeans = FishStatsUtils::Calc_Kmeans(n_x = n_x, loc_orig = loc_intensity[,c("E_km", "N_km")], randomseed = randomseed, nstart = nstart, DirPath = DirPath, Save_Results = Save_Results )
+    NN_i = RANN::nn2( data = Kmeans[["centers"]], query = loc_i, k = 1)$nn.idx[,1]
 
     # Calculate grid for 2D AR1 process
-    loc_grid = expand.grid( 'E_km'=seq(Grid_bounds[1,1],Grid_bounds[2,1],by=grid_size_km), 'N_km'=seq(Grid_bounds[1,2],Grid_bounds[2,2],by=grid_size_km) )
-    Which = sort(unique(RANN::nn2(data=loc_grid, query=Extrapolation_List$Data_Extrap[which(Extrapolation_List$Area_km2_x>0),c('E_km','N_km')], k=1)$nn.idx[,1]))
+    loc_grid = expand.grid( 'E_km' = seq(Grid_bounds[1,1], Grid_bounds[2,1], by = grid_size_km), 'N_km' = seq(Grid_bounds[1,2], Grid_bounds[2,2], by = grid_size_km) )
+    Which = sort(unique(RANN::nn2(data = loc_grid, query = Extrapolation_List$Data_Extrap[which(Extrapolation_List$Area_km2_x > 0),c('E_km','N_km')], k = 1)$nn.idx[,1]))
     loc_grid = loc_grid[Which,]
-    grid_num = RANN::nn2( data=loc_grid, query=loc_i, k=1)$nn.idx[,1]
+    grid_num = RANN::nn2( data = loc_grid, query = loc_i, k = 1)$nn.idx[,1]
   }
 
   # Calc design matrix and areas
-  if( Method=="Grid" ){
+  if( Method == "Grid" ){
     knot_i = grid_num
     loc_x = loc_grid
   }
@@ -125,52 +122,52 @@ make_spatial_info.ndd = function( n_x, Lon_i, Lat_i, Extrapolation_List, knot_me
   }
   if( Method == "Stream_network" ){
     knot_i = Extrapolation_List$Data_Extrap[,"child_i"]
-    loc_x_recalc = Convert_LL_to_EastNorth_Fn.ndd( Lon=Network_sz_LL[,"Lon"], Lat=Network_sz_LL[,"Lat"], crs.en, crs.ll)
+    loc_x_recalc = Convert_LL_to_EastNorth_Fn.ndd( Lon = Network_sz_LL[,"Lon"], Lat = Network_sz_LL[,"Lat"], crs.en, crs.ll)
   }
 
   # Bookkeeping for extrapolation-grid
-  if( fine_scale==FALSE ){
+  if( fine_scale == FALSE ){
     loc_g = loc_x
   }
-  if( fine_scale==TRUE ){
-    loc_g = Extrapolation_List$Data_Extrap[ which(Extrapolation_List$Area_km2_x>0), c('E_km','N_km') ]
+  if( fine_scale == TRUE ){
+    loc_g = Extrapolation_List$Data_Extrap[ which(Extrapolation_List$Area_km2_x > 0), c('E_km','N_km') ]
   }
 
-  # Convert loc_x back to location in lat-long coordinates latlon_x                                                      
-  latlon_x = Convert_EN_to_LL_Fn.ndd(E = loc_x[,'E_km'],N = loc_x[,'N_km'], crs.en, crs.ll)[,c("Lat","Lon")] 
+  # Convert loc_x back to location in lat-long coordinates latlon_x
+  latlon_x = Convert_EN_to_LL_Fn.ndd(E = loc_x[,'E_km'], N = loc_x[,'N_km'], crs.en, crs.ll)[,c("Lat","Lon")] 
 
-  # Convert loc_g back to location in lat-long coordinates latlon_g                                                         
-  latlon_g = Convert_EN_to_LL_Fn.ndd(E = loc_g[,'E_km'],N = loc_g[,'N_km'], crs.en, crs.ll)[,c("Lat","Lon")] 
+  # Convert loc_g back to location in lat-long coordinates latlon_g
+  latlon_g = Convert_EN_to_LL_Fn.ndd(E = loc_g[,'E_km'], N = loc_g[,'N_km'], crs.en, crs.ll)[,c("Lat","Lon")] 
 
   # Bundle lat-lon
-  latlon_i = cbind( 'Lat'=Lat_i, 'Lon'=Lon_i )
+  latlon_i = cbind( 'Lat' = Lat_i, 'Lon' = Lon_i )
 
-  # Make mesh and info for anisotropy  SpatialDeltaGLMM::
-  MeshList = FishStatsUtils::Calc_Anisotropic_Mesh( Method=Method, loc_x=Kmeans$centers, loc_g=loc_g, loc_i=loc_i, Extrapolation_List=Extrapolation_List, fine_scale=fine_scale, ... )
-  n_s = switch( tolower(Method), "mesh"=MeshList$anisotropic_spde$n.spde, "grid"=nrow(loc_x), "spherical_mesh"=MeshList$isotropic_spde$n.spde, "stream_network"=nrow(loc_x) )
+  # Make mesh and info for anisotropy
+  MeshList = FishStatsUtils::Calc_Anisotropic_Mesh( Method = Method, loc_x = Kmeans$centers, loc_g = loc_g, loc_i = loc_i, Extrapolation_List = Extrapolation_List, fine_scale = fine_scale, ... )
+  n_s = switch( tolower(Method), "mesh" = MeshList$anisotropic_spde$n.spde, "grid" = nrow(loc_x), "spherical_mesh" = MeshList$isotropic_spde$n.spde, "stream_network" = nrow(loc_x) )
 
   # Make matrices for 2D AR1 process
-  Dist_grid = dist(loc_grid, diag=TRUE, upper=TRUE)
-  M0 = as( ifelse(as.matrix(Dist_grid)==0, 1, 0), "dgTMatrix" )
-  M1 = as( ifelse(as.matrix(Dist_grid)==grid_size_km, 1, 0), "dgTMatrix" )
-  M2 = as( ifelse(as.matrix(Dist_grid)==sqrt(2)*grid_size_km, 1, 0), "dgTMatrix" )
-  if( Method=="Spherical_mesh" ) GridList = list("M0"=M0, "M1"=M1, "M2"=M2, "grid_size_km"=grid_size_LL)
-  if( Method %in% c("Mesh","Grid","Stream_network") ) GridList = list("M0"=M0, "M1"=M1, "M2"=M2, "grid_size_km"=grid_size_km)
+  Dist_grid = dist(loc_grid, diag = TRUE, upper = TRUE)
+  M0 = as( ifelse(as.matrix(Dist_grid) == 0, 1, 0), "dgTMatrix" )
+  M1 = as( ifelse(as.matrix(Dist_grid) == grid_size_km, 1, 0), "dgTMatrix" )
+  M2 = as( ifelse(as.matrix(Dist_grid) == sqrt(2)*grid_size_km, 1, 0), "dgTMatrix" )
+  if( Method == "Spherical_mesh" ) GridList = list("M0" = M0, "M1" = M1, "M2" = M2, "grid_size_km" = grid_size_LL)
+  if( Method %in% c("Mesh","Grid","Stream_network") ) GridList = list("M0" = M0, "M1" = M1, "M2" = M2, "grid_size_km" = grid_size_km)
 
   # Make projection matrices
-  if( fine_scale==FALSE ){
-    A_is = matrix(0, nrow=nrow(loc_i), ncol=n_s)
-    A_is[ cbind(1:nrow(loc_i),knot_i) ] = 1
+  if( fine_scale == FALSE ){
+    A_is = matrix(0, nrow = nrow(loc_i), ncol = n_s)
+    A_is[ cbind(1:nrow(loc_i), knot_i) ] = 1
     A_is = as( A_is, "dgTMatrix" )
     A_gs = as( diag(n_x), "dgTMatrix" )
   }
-  if( fine_scale==TRUE ){
-    A_is = INLA::inla.spde.make.A( MeshList$anisotropic_mesh, loc=as.matrix(loc_i) )
-    if( class(A_is)=="dgCMatrix" ) A_is = as( A_is, "dgTMatrix" )
-    A_gs = INLA::inla.spde.make.A( MeshList$anisotropic_mesh, loc=as.matrix(loc_g) )
-    if( class(A_gs)=="dgCMatrix" ) A_gs = as( A_gs, "dgTMatrix" )
-    Check_i = apply( A_is, MARGIN=1, FUN=function(vec){sum(vec>0)})
-    Check_g = apply( A_is, MARGIN=1, FUN=function(vec){sum(vec>0)})
+  if( fine_scale == TRUE ){
+    A_is = INLA::inla.spde.make.A( MeshList$anisotropic_mesh, loc = as.matrix(loc_i) )
+    if( class(A_is) == "dgCMatrix" ) A_is = as( A_is, "dgTMatrix" )
+    A_gs = INLA::inla.spde.make.A( MeshList$anisotropic_mesh, loc = as.matrix(loc_g) )
+    if( class(A_gs) == "dgCMatrix" ) A_gs = as( A_gs, "dgTMatrix" )
+    Check_i = apply( A_is, MARGIN = 1, FUN = function(vec){sum(vec > 0)})
+    Check_g = apply( A_is, MARGIN = 1, FUN = function(vec){sum(vec > 0)})
     if( any(c(Check_i,Check_g) <= 0 ) ){
       # stop("Problem with boundary")
       # plot(MeshList$anisotropic_mesh)
@@ -180,26 +177,26 @@ make_spatial_info.ndd = function( n_x, Lon_i, Lat_i, Extrapolation_List, knot_me
 
   # Calculate areas
   if( Method != "Stream_network" ){
-    PolygonList = FishStatsUtils::Calc_Polygon_Areas_and_Polygons_Fn( loc_x=loc_x, Data_Extrap=Extrapolation_List[["Data_Extrap"]], a_el=Extrapolation_List[["a_el"]])
-    if( fine_scale==FALSE ){
+    PolygonList = FishStatsUtils::Calc_Polygon_Areas_and_Polygons_Fn( loc_x = loc_x, Data_Extrap = Extrapolation_List[["Data_Extrap"]], a_el = Extrapolation_List[["a_el"]])
+    if( fine_scale == FALSE ){
       a_gl = PolygonList[["a_xl"]]
     }
-    if( fine_scale==TRUE ){
-      a_gl = as.matrix(Extrapolation_List[["a_el"]][ which(Extrapolation_List$Area_km2_x>0), ])
+    if( fine_scale == TRUE ){
+      a_gl = as.matrix(Extrapolation_List[["a_el"]][ which(Extrapolation_List$Area_km2_x > 0), ])
     }
-  }else{
+  } else {
     PolygonList = NULL
     dist_inp = Network_sz_LL[,"dist_s"]
     dist_inp[which(is.infinite(dist_inp))] <- 0
-    a_gl = matrix(dist_inp, nrow=n_x)
+    a_gl = matrix(dist_inp, nrow = n_x)
   }
 
   # Return
-  Return = list( "fine_scale"=fine_scale, "A_is"=A_is, "A_gs"=A_gs, "n_x"=n_x, "n_s"=n_s, "n_g"=nrow(a_gl), "n_i"=nrow(loc_i),
-    "MeshList"=MeshList, "GridList"=GridList, "a_gl"=a_gl, "a_xl"=a_gl, "Kmeans"=Kmeans, "knot_i"=knot_i,
-    "loc_i"=as.matrix(loc_i), "loc_x"=as.matrix(loc_x), "loc_g"=as.matrix(loc_g),
-    "Method"=Method, "PolygonList"=PolygonList, "NN_Extrap"=PolygonList$NN_Extrap, "knot_method"=knot_method,
-    "latlon_x"=latlon_x, "latlon_g"=latlon_g, "latlon_i"=latlon_i )
+  Return = list( "fine_scale" = fine_scale, "A_is" = A_is, "A_gs" = A_gs, "n_x" = n_x, "n_s" = n_s, "n_g" = nrow(a_gl), "n_i" = nrow(loc_i),
+    "MeshList" = MeshList, "GridList" = GridList, "a_gl" = a_gl, "a_xl" = a_gl, "Kmeans" = Kmeans, "knot_i" = knot_i,
+    "loc_i" = as.matrix(loc_i), "loc_x" = as.matrix(loc_x), "loc_g" = as.matrix(loc_g),
+    "Method" = Method, "PolygonList" = PolygonList, "NN_Extrap" = PolygonList$NN_Extrap, "knot_method" = knot_method,
+    "latlon_x" = latlon_x, "latlon_g" = latlon_g, "latlon_i" = latlon_i )
   class(Return) = "make_spatial_info"
   return( Return )
 }

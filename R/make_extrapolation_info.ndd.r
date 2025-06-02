@@ -1,93 +1,90 @@
 
-#' modified from Jim Thorson's FishStatUtils::Prepare_User_Extrapolation_Data_Fn.R
-#' uses my \code{Convert_EN_to_LL_Fn.ndd} and \code{Convert_LL_to_EastNorth_Fn.ndd} functions
-#' also modifies \code{strata.limits} to match \code{strata.sp} if it is present 
-#' @param Region user
-#' @param strata.limits data frame with strata limits
-#' @param input.grid user created extrapolation grid
-#' @param crs.en Character string of the crs for the E-N projection
-#' @param crs.ll Character string of the crs for the current lat-lon projections
-#' @param strata.sp [Optional] If present, a shapefile containing the strata boundaries to calculate the indicies for
+#' Is exactly the same as JT FishStatUtils function except it added `colnames(DF_ip) = c(names(sample_data),covariate_names)` to correct column mismatch
+#' This issue has been raised with JT and should be corrected in the next merge of the FishStatUtils dev branch
+#' @param formula Formula for the covariates
+#' @param covariate_data Data frame containing the covariates
+#' @param Year_i Vector of year of every observation
+#' @param spatial_list spatial_list produced by \code{make_spatial_info.ndd}
+#' @param extrapolation_list extrapolation_list produced by \code{make_extrapolation_info.ndd}
 #' @return returns a tagged list used in other functions
-#' \describe{
-#'   \item{a_el}{The area associated with each extrapolation grid cell (rows) and strata (columns)}
-#'   \item{Data_Extrap}{A data frame describing the extrapolation grid with columns: Lon, Lat, Area_km2, Include, E_km, N_km. Include appears to be set to 1 for all areas? or set it to 0 for grid cells where you don't want an extrapolation??}
-#'   \item{Area_km2_x}{the area associated with each row of Data_Extrap, in units square-kilometers}
-#'   \item{zone}{}
-#'   \item{flip_around_dateline}{}
-#' }
-#' @importFrom rgeos gUnion
-#' @importFrom sp coordinates
-#' @importFrom sp proj4string
-#' @importFrom sp over
+#' @importFrom RANN nn2
+#' @importFrom abind abind
 #' @export
 
-make_extrapolation_info.ndd = function(Region,strata.limits,input.grid,crs.en,crs.ll,strata.sp)
-{
-	# define input_grid
-	  	# x.range = floor(range(observations_LL$Lon)/input.grid.res)*input.grid.res
-	  	# y.range = floor(range(observations_LL$Lat)/input.grid.res)*input.grid.res
+make_covariates.ndd = function( formula = ~0, covariate_data, Year_i, spatial_list, extrapolation_list ){
+  # Errors
+  if( !is.data.frame(covariate_data) ) stop("Please ensure that `covariate_data` is a data frame")
+  if( !all(c("Lat","Lon","Year") %in% names(covariate_data)) ){
+    stop( "`data` in `make_covariates(.)` must include columns `Lat`, `Lon`, and `Year`" )
+  }
 
-	  	# # x.range[1] = x.range[1] - 0.5*input.grid.res
-	  	# # x.range[2] = x.range[2] + 0.5*input.grid.res
-	  	# # y.range[1] = y.range[1] - 0.5*input.grid.res
-	  	# # y.range[2] = y.range[2] + 0.5*input.grid.res
-	  	# x.seq = seq(from=x.range[1],to=x.range[2],by=input.grid.res)
-	  	# y.seq = seq(from=y.range[1],to=y.range[2],by=input.grid.res)
+  # transform data inputs
+  sample_data = data.frame( "Year" = Year_i, "Lat" = spatial_list$latlon_i[,'Lat'], "Lon" = spatial_list$latlon_i[,'Lon'] )
+  covariate_names = setdiff( names(covariate_data), names(sample_data) )
 
-	  	# input_grid = expand.grid(Lon=x.seq,Lat=y.seq)
-	  	# input_grid$Area_km2 = (input.grid.res*110)^2
-	  	# input_grid = as.matrix(input_grid)
+  # set of years needed
+  Year_Set = min(Year_i):max(Year_i)
 
-	# Read extrapolation data
-  		Data_Extrap = input.grid
+  # extract latitude and longitude for extrapolation grid
+  latlon_g = spatial_list$latlon_g
 
-  	# Survey areas
-  		Area_km2_x = Data_Extrap[,'Area_km2']
-  
-  	# Augment with strata for each extrapolation cell
-  		if(missing(strata.sp))
-  		{
-  			a_el = data.frame(All_areas = Area_km2_x)
-  		} else {
-  
-			# define union of model region
-				n.substrata = length(strata.sp)
-				full.reg = strata.sp[1]
-				for(i in 2:length(strata.sp)){full.reg = rgeos::gUnion(full.reg,strata.sp[i])}
-				strata.sp = rbind(full.reg,strata.sp)
-				new_IDs = c("all.strata",paste0("sub.strata.",1:n.substrata))
-				for (i in 1:length(slot(strata.sp, "polygons")))
-				{
-				  slot(slot(strata.sp, "polygons")[[i]], "ID") = new_IDs[i]
-				}
+  # Create data frame of necessary size
+  DF_zp = NULL
+  DF_ip = cbind( sample_data, covariate_data[rep(1,nrow(sample_data)),covariate_names] )
+  colnames(DF_ip) = c(names(sample_data),covariate_names)
+  DF_ip[,covariate_names] = NA
 
-				a_el = as.data.frame(matrix(NA,nrow=length(Area_km2_x),ncol=length(strata.sp)+1))
-				colnames(a_el) = c("all_areas",names(strata.sp))
+  # Loop through data and extrapolation-grid
+  for( tI in seq_along(Year_Set) ){
 
-				extrap.points = as.data.frame(Data_Extrap)
-				sp::coordinates(extrap.points) = c("Lon", "Lat")
-	  			sp::proj4string(extrap.points) = sp::proj4string(strata.sp)
-				a_el[,1] = Area_km2_x
-				for(i in 1:length(strata.sp))
-				{
-					a_el[,i+1] = Area_km2_x * ifelse(is.na(sp::over(extrap.points,strata.sp[i])),0,1)
-				}
-  		}
+    # Subset to same year
+    tmp_covariate_data = covariate_data[ which(Year_Set[tI]==covariate_data[,'Year'] | is.na(covariate_data[,'Year'])), , drop=FALSE]
+    if( nrow(tmp_covariate_data)==0 ){
+      stop("Year ", Year_Set[tI], " not found in `covariate_data` please specify covariate values for all years" )
+    }
+    #
+    Which = which(Year_Set[tI]==sample_data[,'Year'])
+    # Do nearest neighbors to define covariates for observations, skipping years without observations
+    if( length(Which) > 0 ){
+      NN = RANN::nn2( data = tmp_covariate_data[,c("Lat","Lon")], query = sample_data[Which,c("Lat","Lon")], k = 1 )
+      # Add to data-frame
+      nearest_covariates = tmp_covariate_data[ NN$nn.idx[,1], covariate_names, drop = FALSE ]
+      DF_ip[Which, covariate_names] = nearest_covariates
+    }
 
+    # Do nearest neighbors to define covariates for extrapolation grid, including years without observations
+    NN = RANN::nn2( data = tmp_covariate_data[,c("Lat","Lon")], query = latlon_g[,c("Lat","Lon")], k = 1 )
+    # Add rows
+    nearest_covariates = tmp_covariate_data[ NN$nn.idx[,1], covariate_names, drop = FALSE ]
+    newrows = cbind("Year" = Year_Set[tI], latlon_g, nearest_covariates )
+    DF_zp = rbind( DF_zp, newrows )
+  }
+  if( any(is.na(DF_ip)) ) stop("Problem with `DF_ip` in `make_covariates(.)")
 
-  # Convert extrapolation-data to an Eastings-Northings coordinate system
-  		tmpEN = Convert_LL_to_EastNorth_Fn.ndd( Lon=Data_Extrap[,'Lon'], Lat=Data_Extrap[,'Lat'],crs.en=crs.en,crs.ll=crs.ll)                                                         #$
+  # Convert to dimensions requested
+  DF = rbind( DF_ip, DF_zp )
+  X = model.matrix( update.formula(formula, ~.+0), data = DF )[,,drop = FALSE]
 
-  # Extra junk
-	  Data_Extrap = cbind( Data_Extrap, 'Include'=1)
-	  if( all(c("E_km","N_km") %in% colnames(Data_Extrap)) ){
-	    Data_Extrap[,c('E_km','N_km')] = tmpEN[,c('E_km','N_km')]
-	  }else{
-	    Data_Extrap = cbind( Data_Extrap, 'E_km'=tmpEN[,'E_km'], 'N_km'=tmpEN[,'N_km'] )
-	  }
+  # Make X_ip
+  X_ip = X[ 1:nrow(DF_ip), , drop = FALSE ]
+  X_itp = aperm( X_ip %o% rep(1,length(Year_Set)), perm = c(1,3,2) )
 
-  # Return
-	  Return = list( "a_el"=a_el, "Data_Extrap"=Data_Extrap, "zone"=NA, "flip_around_dateline"=NA, "Area_km2_x"=Area_km2_x)
-	  return( Return )
+  # Make X_gpt and then permute dimensions
+  X_gpt = NULL
+  indices = nrow(X_ip)
+  for( tI in seq_along(Year_Set) ){
+    indices = max(indices) + 1:nrow(latlon_g)
+    if( max(indices) > nrow(X) ) stop("Check problem in `make_covariates`")
+    X_gpt = abind::abind( X_gpt, X[ indices, , drop = FALSE ], along = 3 )
+  }
+  X_gtp = aperm( X_gpt, perm = c(1,3,2) )
+
+  # warnings
+  if( any(apply(X_gtp, MARGIN = 2:3, FUN = sd) > 10 | apply(X_itp, MARGIN = 2:3, FUN = sd) > 10) ){
+    warning("The package author recommends that you rescale covariates in `covariate_data` to have mean 0 and standard deviation 1.0")
+  }
+
+  # return stuff
+  Return = list( "X_gtp" = X_gtp, "X_itp" = X_itp, "covariate_names" = covariate_names )
+  return( Return )
 }
